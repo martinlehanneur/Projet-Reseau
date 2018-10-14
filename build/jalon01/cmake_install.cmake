@@ -1,4 +1,4 @@
-# Install script for directory: /home/remi/Documents/Enseirb/Reseau/src/jalon01
+# Install script for directory: /home/remi/Documents/Enseirb/Projet-Reseau/src/jalon01
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)

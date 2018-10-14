@@ -12,8 +12,9 @@
 #include <assert.h>
 #include <poll.h>
 #include <sys/socket.h>
-#include <netinet/in.h>
+
 #include <arpa/inet.h>
+#include <time.h>
 
 void error(const char *msg)
 {
@@ -46,9 +47,10 @@ void do_listen(int sockfd, int nb_connexions){
   }
 }
 
-int do_accept(int sockfd,struct sockaddr_in sinclient){
-  int sinsize = sizeof sinclient;
-  int var = accept(sockfd,(struct sockaddr*)&sinclient,&sinsize);
+int do_accept(int sockfd,struct sockaddr_storage sinclient){
+  socklen_t len;
+  len = sizeof sinclient;
+  int var = accept(sockfd,(struct sockaddr*)&sinclient,&len);
   if(var<0){
     error("server: accept");
   }
@@ -77,7 +79,7 @@ int main(int argc, char** argv)
     return 1;
   }
 
-  int nb_connexions=3;
+  int nb_connexions=5;
 
   struct sockaddr_in sin;
   struct pollfd fds[nb_connexions+1];
@@ -89,7 +91,9 @@ int main(int argc, char** argv)
   struct client
   {
     char nom[len_nom];
-    char *adresse;
+    char adresse[100];
+    char date[64];
+    int port;
   };
 
   struct client tableau[nb_connexions+1];
@@ -102,7 +106,7 @@ int main(int argc, char** argv)
 
   int len=100;
   char buf[len];
-  struct sockaddr_in sinclient={0};
+  struct sockaddr_storage sinclient;
 //  socklen_t* addrlen= (socklen_t*)sizeof(sinclient);
 
   do_bind(sockfd, sin);
@@ -116,7 +120,13 @@ int main(int argc, char** argv)
           int connexion=do_accept(sockfd, sinclient);
           for(int k=0; k<nb_connexions; k++){
             if (fds[k].fd==0){
-              tableau[k].adresse=inet_ntoa(sinclient.sin_addr);
+              struct sockaddr_in *s = (struct sockaddr_in *)&sinclient;
+    tableau[k].port = ntohs(s->sin_port);
+    inet_ntop(AF_INET, &s->sin_addr, tableau[k].adresse, sizeof tableau[k].adresse);
+              //tableau[k].adresse=inet_ntoa(sinclient.sin_addr);
+              time_t t = time(NULL);
+                  struct tm *tm = localtime(&t);
+                  strftime(tableau[k].date, sizeof(tableau[k].date), "%c", tm);
               fds[k].fd=connexion;
               fds[k].events=POLLIN;
               do_write(fds[k].fd,"Vous êtes maintenant connecté",len);
@@ -170,7 +180,7 @@ int main(int argc, char** argv)
           else if (strcmp(buf,"/who\n")==0){
             char message[1000]="Online users are:\n";
             int j=1;
-            while(j<nb_connexions-1){
+            while(j<nb_connexions){
               if(tableau[j].nom[0]!='\0'){
                 strcat(message, " - ");
                 strcat(message, tableau[j].nom);
@@ -190,16 +200,18 @@ int main(int argc, char** argv)
               j++;
             }
             j=1;
-            while(j<nb_connexions-1){
+            while(j<nb_connexions){
               if(strcmp(tableau[j].nom, nom)==0){
+                char port[sizeof(int)];
                 strcat(message, tableau[j].nom);
-
-                //char* port=ntohs(sin.sin_port);
+                strcat(message," connected since ");
+                strcat(message, tableau[j].date);
                 strcat(message," with IP address ");
                 strcat(message, tableau[j].adresse);
-                // strcat(message," and port number ");
-                // strcat(message, port);
-                j=nb_connexions;
+                strcat(message," and port number ");
+                sprintf(port, "%d", tableau[j].port);
+                strcat(message, port);
+                break;
               }
               j++;
               if(j==(nb_connexions-1)){
