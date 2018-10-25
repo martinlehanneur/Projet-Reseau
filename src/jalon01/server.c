@@ -252,6 +252,7 @@ int main(int argc, char** argv)
             time_t t = time(NULL);
             tm=localtime(&t);
             strftime(temps, sizeof(temps), "%c", tm);
+
             insertion(client, adresse, temps, ntohs(s->sin_port), connexion);
 
             for(int k=1; k<=nb_connexions; k++){
