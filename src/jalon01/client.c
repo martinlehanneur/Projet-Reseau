@@ -10,6 +10,10 @@
 #include <string.h>
 #include <unistd.h>
 #include <netinet/in.h>
+#include <poll.h>
+#include <pthread.h>
+
+
 
 void error (const char *msg){
   perror(msg);
@@ -48,6 +52,26 @@ void do_read(int sockfd, char *buf, int len){
 }
 
 
+void* start_read(void *arg){
+  while(1){
+  char buf[1000];
+  char message[100];
+  do_read(*(int *)arg,buf,1000);
+  if(strcmp(buf, "              [Server] Vous allez être déconnecté...\n")==0){
+    printf("%s", buf);
+    close (*(int *)arg);
+    printf("Connection terminée\n");
+    break;
+  }
+  else{
+    printf ("%s\n",buf);
+  }
+}
+exit(12);
+}
+
+
+
 int main(int argc,char** argv)
 {
 
@@ -64,44 +88,34 @@ int main(int argc,char** argv)
     sin.sin_family=AF_INET;
     sin.sin_port=htons(atoi(argv[2]));
     inet_aton(argv[1], &sin.sin_addr);
+    int sockfd = do_socket(AF_INET,SOCK_STREAM,0);
+
+
 
     //get the socket
 
-    int sockfd = do_socket(AF_INET,SOCK_STREAM,0);
+
     int len=100;
     char con_message[100];
     do_connect(sockfd,sin);
     do_read(sockfd,con_message,len);
     if(strcmp(con_message,"Le serveur n'accepte plus de connexions\n")==0){
-      printf("[Server] : %s\n", con_message);
+      printf("%s\n", con_message);
       close (sockfd);
       exit(0);
     }
+    printf("Entrer un message: ");
 
+    pthread_t pthread[1];
+    pthread_create(&pthread[1], NULL, start_read, (void*)&sockfd);
 
     //connect to remote socket
     while(1){
-      char buf[1000];
-      char buf2[100];
-      char message[100];
-
-      printf("Entrer un message: ");
-      fgets(message, len, stdin);
-      do_write(sockfd,message, len);
-      do_read(sockfd,buf,1000);
-      if(strcmp(message, "/quit\n")==0){
-        printf("[Server] : %s\n", buf);
-        close (sockfd);
-        printf("Connection terminée\n");
-        exit(0);
-      }
-      else{
-        printf ("[Serveur] : %s\n",buf);
-      }
+        char message[100];
+        fgets(message, len, stdin);
+        do_write(sockfd, message, len);
     }
-
   }
-
   exit(0);
 
 

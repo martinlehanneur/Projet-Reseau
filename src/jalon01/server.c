@@ -32,6 +32,29 @@ struct List
   Element *first;
 };
 
+typedef struct User User;
+struct User
+{
+  char* name;
+  int sockfd;
+  User *next;
+};
+
+
+typedef struct Salon Salon;
+struct Salon
+{
+  char* name;
+  Salon *next;
+  User *first;
+};
+
+typedef struct AllSalon AllSalon;
+struct AllSalon
+{
+  Salon *next;
+};
+
 List *initialisation()
 {
   List *list = malloc(sizeof(*list));
@@ -43,6 +66,18 @@ List *initialisation()
 
   list->first = NULL;
   return list;
+}
+
+AllSalon *initialisation_allsalon()
+{
+  AllSalon *AllSalon = malloc(sizeof(*AllSalon));
+  if (AllSalon == NULL)
+  {
+    exit(EXIT_FAILURE);
+  }
+
+  AllSalon->next = NULL;
+  return AllSalon;
 }
 
 void insertion(List *list, char* adresse, char* date, int port, int sockfd)
@@ -62,6 +97,36 @@ void insertion(List *list, char* adresse, char* date, int port, int sockfd)
   strcpy(nouveau->date,date);
   strcpy(nouveau->name,"\0");
   strcpy(nouveau->adresse,adresse);
+
+}
+
+void insertion_salon(AllSalon *allsalon, char* name)
+{
+  Salon *nouveau = malloc(sizeof(*nouveau));
+  if (allsalon == NULL || nouveau == NULL)
+  {
+    exit(EXIT_FAILURE);
+  }
+  nouveau->name=malloc(20*sizeof(char));
+  nouveau->next = allsalon->next;
+  allsalon->next = nouveau;
+  strcpy(nouveau->name,name);
+  nouveau->first=NULL;
+
+}
+
+void insertion_user(Salon *salon, char* name, int sockfd)
+{
+  User *nouveau = malloc(sizeof(*nouveau));
+  if (salon == NULL || nouveau == NULL)
+  {
+    exit(EXIT_FAILURE);
+  }
+  nouveau->name=malloc(20*sizeof(char));
+  nouveau->next = salon->first;
+  nouveau->sockfd = sockfd;
+  salon->first = nouveau;
+  strcpy(nouveau->name,name);
 
 }
 
@@ -93,6 +158,66 @@ void delete(List *list, int sockfd)
   free(tmp->adresse);
   free(tmp->name);
   free(tmp);
+}
+
+void delete_salon(AllSalon *allsalon, char* name)
+{
+  Salon *tmp;
+  Salon *previous;
+  tmp=allsalon->next;
+  previous=allsalon->next;
+  if (tmp == NULL)
+  {
+    exit(EXIT_FAILURE);
+  }
+  else if(strcmp(tmp->name,name)==0){
+    allsalon->next=tmp->next;
+  }
+  else{
+    while (tmp != NULL)
+    {
+      if(strcmp(tmp->name,name)==0){
+        previous->next = tmp->next;
+        break;
+      }
+      previous=tmp;
+      tmp=tmp->next;
+    }
+  }
+  free(tmp->name);
+  free(tmp);
+}
+
+int delete_user(Salon *salon, int sockfd)
+{
+ User *tmp;
+  User *previous;
+  tmp=salon->first;
+  previous=salon->first;
+  if (tmp == NULL)
+  {
+    return 0;
+  }
+  else if(sockfd==tmp->sockfd){
+    salon->first=tmp->next;
+    free(tmp->name);
+    free(tmp);
+    return 1;
+  }
+  else{
+    while (tmp != NULL)
+    {
+      if(sockfd==tmp->sockfd){
+        previous->next = tmp->next;
+        free(tmp->name);
+        free(tmp);
+        return 1;
+      }
+      previous=tmp;
+      tmp=tmp->next;
+    }
+  }
+return 0;
 }
 
 void printList(List *list)
@@ -233,6 +358,7 @@ int main(int argc, char** argv)
   }
 
   List *client = initialisation();
+  AllSalon *allsalon = initialisation_allsalon();
 
   do_bind(sockfd, sin);
   do_listen(sockfd, nb_connexions+1);
@@ -259,7 +385,7 @@ int main(int argc, char** argv)
               if(fds[k].fd==0){
                 fds[k].fd=connexion;
                 fds[k].events=POLLIN;
-                do_write(fds[k].fd,"Vous êtes maintenant connecté",len);
+                do_write(fds[k].fd,"              [Server] Vous êtes maintenant connecté",len);
                 break;
               }
             }
@@ -267,7 +393,7 @@ int main(int argc, char** argv)
           else {
             fds[nb_connexions+1].fd=connexion;
             fds[nb_connexions+1].events=POLLIN;
-            do_write(fds[nb_connexions+1].fd,"Le serveur n'accepte plus de connexions\n",len);
+            do_write(fds[nb_connexions+1].fd,"              [Server] Le serveur n'accepte plus de connexions\n",len);
             close(fds[nb_connexions+1].fd);
           }
         }
@@ -277,20 +403,36 @@ int main(int argc, char** argv)
           Element *current_client=find_client(client, fds[i].fd);
 
           if(strcmp(buf, "/quit\n")==0){
-            do_write(fds[i].fd,"Vous allez être déconnecté",len);
+            Salon* salon;
+            salon=allsalon->next;
+            char message[1000]="";
+            while(salon != NULL)
+            {
+              delete_user(salon, fds[i].fd);
+              if(salon->first==NULL){
+                strcat(message, "             [");
+                strcat(message, salon->name);
+                strcat(message, "] Le salon a été supprimé\n");
+                delete_salon(allsalon, salon->name);
+                do_write(fds[i].fd,message,len);
+              }
+              salon = salon->next;
+            }
+            do_write(fds[i].fd,"              [Server] Vous allez être déconnecté...\n",len);
             delete(client,fds[i].fd);
             close(fds[i].fd);
             fds[i].fd=0;
           }
 
           else if (strcmp(current_client->name,"\0")==0 && strncmp(buf,"/nick ", 6)!=0){
-            do_write(fds[i].fd,"Vous devez entrer un name: /nick name",len);
+            do_write(fds[i].fd,"              [Server] Vous devez entrer un name: /nick name",len);
           }
 
           else if(strcmp(current_client->name,"\0")==0 && strncmp(buf,"/nick ", 6)==0){
             char message[100]="";
             strcpy(current_client->name,buf+6);
-            strcat(message,"Bonjour, bienvenue à toi: ");
+            current_client->name[strlen(current_client->name)-1]=0;
+            strcat(message,"              [Server] Bonjour, bienvenue à toi: ");
             strcat(message, buf+6);
             do_write(fds[i].fd, message, len);
           }
@@ -300,7 +442,8 @@ int main(int argc, char** argv)
             int var=6;
             char message[100]="";
             strcpy(current_client->name,buf+6);
-            strcat(message,"Ton nouveau name est : ");
+            current_client->name[strlen(current_client->name)-1]=0;
+            strcat(message,"              [Server] Ton nouveau nom est : ");
             strcat(message, buf+6);
             do_write(fds[i].fd, message, len);
           }
@@ -309,7 +452,7 @@ int main(int argc, char** argv)
             char message[100]="";
             Element* element;
             element=client->first;
-            strcat(message,"Online users are:\n");
+            strcat(message,"              [Server] Online users are:\n");
             while(element != NULL)
             {
               strcat(message, " - ");
@@ -322,9 +465,11 @@ int main(int argc, char** argv)
           else if (strncmp(buf,"/whois ",7)==0){
             char message[1000]="";
             Element *researched_client;
-            researched_client=find_client_name(client, buf+7);
+            char *name=strtok(buf+7, "\n");
+            researched_client=find_client_name(client, name);
             if(researched_client!=NULL){
               char port[sizeof(int)];
+              strcat(message,"              [Server] ");
               strcat(message, researched_client->name);
               strcat(message," connected since ");
               strcat(message, researched_client->date);
@@ -336,18 +481,225 @@ int main(int argc, char** argv)
             }
 
             else{
-              strcat(message, "Ce client n'existe pas !");
+              strcat(message, "             [Server] Ce client n'existe pas !");
             }
             do_write(fds[i].fd,message,1000);
           }
+            else if (strncmp(buf,"/msgall ",8)==0){
+              char message[1000]="";
+              Element* element;
+              element=client->first;
+              strcat(message,"              [");
+              strcat(message,current_client->name);
+              strcat(message,"]");
+              strcat(message, buf+8);
+              while(element != NULL)
+              {
+                if(element->sockfd!=fds[i].fd){
+                  do_write(element->sockfd, message,1000);
+                }
+                element = element->next;
+              }
 
-          else{
-            do_write(fds[i].fd,buf,len);
+            }
+            else if (strncmp(buf,"/msg ",5)==0){
+              char message[1000]="";
+              char *name=strtok(buf+5, " ");
+              Element* element;
+              element=client->first;
+              strcat(message,"              [");
+              strcat(message,current_client->name);
+              strcat(message,"]");
+              char* recu=strtok(NULL, "\n");
+              strcat(message,recu);
+              while(element != NULL)
+              {
+                if(strcmp(element->name,name)==0){
+                  do_write(element->sockfd, message,1000);
+                }
+                element = element->next;
+              }
+            }
+            else if (strncmp(buf,"/create ",8)==0){
+              char *name=strtok(buf+8, "\n");
+              Salon* salon;
+              if(allsalon->next==NULL){
+                insertion_salon(allsalon,name);
+                salon=NULL;
+              }
+              else{
+                salon=allsalon->next;
+              }
+              while(salon != NULL)
+              {
+                char message[1000]="";
+                if(strcmp(salon->name,name)==0){
+                  strcat(message, "             [Server] Ce nom de salon existe déjà !\n");
+                  do_write(fds[i].fd,message,1000);
+                    break;
+                }
+                else if(salon->next==NULL){
+                  insertion_salon(allsalon, name);
+                  strcat(message, "             [Server] Vous avez créé le salon ");
+                  strcat(message, salon->name);
+                  strcat(message, "\n");
+                  do_write(fds[i].fd,message,1000);
+                  break;
+                }
+                else{
+                salon = salon->next;
+              }
+              }
+            }
+            else if (strncmp(buf,"/join ",6)==0){
+              char *name=strtok(buf+6, "\n");
+              Salon* salon;
+              salon=allsalon->next;
+              char message[1000]="";
+              if(salon==NULL){
+                strcat(message,"              [server] Ce salon n'existe pas\n");
+                do_write(fds[i].fd,message,1000);
+              }
+              while(salon != NULL)
+              {
+                if(strcmp(salon->name,name)==0){
+                  insertion_user(salon, name, fds[i].fd);
+                  strcat(message, "             [");
+                  strcat(message,name);
+                  strcat(message, "] Bienvenu dans le salon !\n");
+                  do_write(fds[i].fd,message,1000);
+                  break;
+                }
+                else if(salon->next==NULL){
+                  strcat(message, "             [server] Ce salon n'existe pas\n");
+                  do_write(fds[i].fd,message,1000);
+                  break;
+                }
+                else{
+                salon = salon->next;
+              }
+              }
+            }
+            else if (strncmp(buf,"/msgsalon ",10)==0){
+              char message[1000]="";
+              char *name=strtok(buf+10, " ");
+              Salon* salon;
+              if(allsalon->next==NULL){
+                strcat(message,"              [server] Ce salon n'existe pas !\n");
+                do_write(fds[i].fd, message,1000);
+              }
+              else{
+              salon=allsalon->next;
+            }
+
+              while(salon != NULL)
+              {
+                if(strcmp(salon->name,name)==0){
+                  User* user;
+                  if(salon->first==NULL){
+                    strcat(message,"                [server] Vous n'êtes pas membre de ce salon !\n");
+                    do_write(fds[i].fd, message,1000);
+                    break;
+                  }
+                  else{
+                  user=salon->first;
+                }
+                while(user!=NULL){
+                  if(fds[i].fd==user->sockfd){
+                    strcat(message,"              [");
+                    strcat(message,salon->name);
+                    strcat(message,"]");
+                    strcat(message,"[");
+                    strcat(message,current_client->name);
+                    strcat(message,"]");
+                    char* recu=strtok(NULL, "\n");
+                    strcat(message,recu);
+                    user=salon->first;
+                    if(user->sockfd==fds[i].fd){
+                      user=user->next;
+                    }
+                    while(user!=NULL){
+                      do_write(user->sockfd, message,1000);
+                     if(user->next==NULL){
+                        break;
+                      }
+                      user=user->next;
+                      if(user->sockfd==fds[i].fd){
+                        user=user->next;
+                      }
+                    }
+                    break;
+                  }
+
+                  else if(user->next==NULL){
+                    strcat(message,"              [server] Vous n'êtes pas membre de ce salon\n");
+                    do_write(fds[i].fd, message,1000);
+                    break;
+                  }
+                  user=user->next;
+                }
+
+                break;
+                }
+                else if(salon->next==NULL){
+                  strcat(message,"              [Server]Ce salon n'existe pas !\n");
+                  do_write(fds[i].fd, message,1000);
+                  break;
+                }
+                salon = salon->next;
+              }
+            }
+            else if (strncmp(buf,"/quit ",6)==0){
+              char message[1000]="";
+              char *name=strtok(buf+6, "\n");
+              Salon* salon;
+              if(allsalon->next==NULL){
+                strcat(message,"              [server] Ce salon n'existe pas !\n");
+                do_write(fds[i].fd, message,1000);
+              }
+              else{
+              salon=allsalon->next;
+            }
+
+              while(salon != NULL)
+              {
+                if(strcmp(salon->name,name)==0){
+                  User* user;
+                  if(delete_user(salon, fds[i].fd)==0){
+                    strcat(message,"              [server] Vous n'êtes pas membre de ce salon !\n");
+                    do_write(fds[i].fd, message,1000);
+                    break;
+                  }
+                  else{
+                    strcat(message,"              [");
+                    strcat(message,salon->name);
+                    strcat(message,"] Vous avez quitté le salon !\n");
+                    do_write(fds[i].fd, message,1000);
+                    if(salon->first==NULL){
+                      strcat(message, "             [");
+                      strcat(message, salon->name);
+                      strcat(message, "] Le salon a été supprimé\n");
+                      delete_salon(allsalon, salon->name);
+                      do_write(fds[i].fd, message,1000);
+                    }
+                    break;
+                }
+                }
+                else if(salon->next==NULL){
+                  strcat(message,"              [Server] Ce salon n'existe pas !\n");
+                  do_write(fds[i].fd, message,1000);
+                  break;
+                }
+                salon = salon->next;
+              }
+            }
+            else{
+              do_write(fds[i].fd,buf,len);
+            }
           }
         }
       }
-    }
 
-  }
+    }
   exit (0);
 }

@@ -31,4 +31,8 @@ unistd.h
 -
 netinet/in.h
 -
+poll.h
+-
+pthread.h
+-
 
