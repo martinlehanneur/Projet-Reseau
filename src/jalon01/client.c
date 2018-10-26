@@ -55,13 +55,53 @@ void do_read(int sockfd, char *buf, int len){
 void* start_read(void *arg){
   while(1){
   char buf[1000];
-  char message[100];
+  char message[100]="";
   do_read(*(int *)arg,buf,1000);
   if(strcmp(buf, "              [Server] Vous allez être déconnecté...\n")==0){
     printf("%s", buf);
     close (*(int *)arg);
     printf("Connection terminée\n");
     break;
+  }
+  else if(strncmp(buf, "/send",5)==0){
+    char* name=strtok(buf+6, " ");
+    char* fichier=strtok(NULL, "\n");
+    int len=100;
+    strcat(message, name);
+    strcat(message, " vous envoie le fichier ");
+    strcat(message, fichier);
+    strcat(message, "\nAcceptez vous le fichier [y/n]\n");
+    printf("%s", message);
+    while(1){
+     char reponse[100];
+      fgets(reponse, len, stdin);
+      if(strncmp(reponse, "y",1)==0 ){
+        char message2[100]="";
+        char message3[100]="";
+        char message4[100]="";
+        strcat(message2, "/msg ");
+        strcat(message2, name);
+        strcat(message2, " Fichier accepté\n");
+        do_write(*(int *)arg, message2, len);
+        strcat(message3, "/msg ");
+        strcat(message3, name);
+        strcat(message3, " Fichier transféré\n");
+        do_write(*(int *)arg, message3, len);
+        strcat(message4, fichier);
+        strcat(message4, " sauvegardé dans /Projet-Reseau/");
+        strcat(message4, fichier);
+        printf("%s\n", message4);
+       break;
+      }
+      else if (strncmp(reponse, "n", 1)==0){
+        char message2[len];
+        strcat(message2, "/msg ");
+        strcat(message2, name);
+        strcat(message2, " Fichier refusé\n");
+        do_write(*(int *)arg, message2, len);
+        break;
+      }
+    }
   }
   else{
     printf ("%s\n",buf);

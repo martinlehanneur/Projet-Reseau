@@ -693,7 +693,23 @@ int main(int argc, char** argv)
                 salon = salon->next;
               }
             }
-            else if (strncmp(buf,"/quit ",6)==0){
+            else if (strncmp(buf,"/send ",6)==0){
+              char message[1000]="";
+              char *name=strtok(buf+5, " ");
+              Element* element;
+              element=client->first;
+              strcat(message,"/send ");
+              strcat(message,current_client->name);
+              strcat(message, " "); 
+              char* recu=strtok(NULL, "\n");
+              strcat(message,recu);
+              while(element != NULL)
+              {
+                if(strcmp(element->name,name)==0){
+                  do_write(element->sockfd, message,1000);
+                }
+                element = element->next;
+              }
             }
             else{
               do_write(fds[i].fd,buf,len);
