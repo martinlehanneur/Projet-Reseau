@@ -693,6 +693,8 @@ int main(int argc, char** argv)
                 salon = salon->next;
               }
             }
+            else if (strncmp(buf,"/quit ",6)==0){
+            }
             else{
               do_write(fds[i].fd,buf,len);
             }
