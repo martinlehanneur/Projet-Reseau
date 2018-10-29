@@ -713,8 +713,38 @@ int main(int argc, char** argv)
             {
               if(strcmp(element->name,name)==0){
                 do_write(element->sockfd, message,1000);
+                break;
+              }
+
+              if(element->next==NULL){
+                do_write(fds[i].fd, "             [Server]Ce client n'existe pas\n",1000);
+                break;
               }
               element = element->next;
+            }
+          }
+          else if (strncmp(buf,"/send2 ",7)==0){
+            char message[1000]="";
+            char *name=strtok(buf+7, " ");
+            Element* element;
+            element=client->first;
+            strcat(message,"/send2 ");
+            strcat(message,current_client->name);
+            strcat(message, " ");
+            char* recu=strtok(NULL, "\n");
+            strcat(message,recu);
+            while(element != NULL)
+            {
+              if(strcmp(element->name,name)==0){
+                do_write(element->sockfd, message,1000);
+                break;
+              }
+
+              if(element->next==NULL){
+                do_write(fds[i].fd, "             [Server]Le transfert a échoué\n",1000);
+                break;
+              }
+                element = element->next;
             }
           }
           else{
