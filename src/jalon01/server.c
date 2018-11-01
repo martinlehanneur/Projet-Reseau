@@ -326,6 +326,48 @@ Element *find_client_name(List *list, char* name){
   return NULL;
 }
 
+void* start_read(void *arg){
+  while(1){
+    char buf[1000];
+    char message[100]="";
+    __sync_synchronize();
+    fgets(message, 100, stdin);
+    __sync_synchronize();
+
+    if(strcmp(message,"/quit\n")==0){
+
+
+
+    Element* element;
+    List *client=(List *)arg;
+      element=client->first;
+      char message[1000]="";
+      if(element==NULL){
+        exit(14);
+      }
+      while(client->first != NULL)
+      {
+      do_write(client->first->sockfd,"[Server] Vous allez être déconnecté...\n",100);
+      close(client->first->sockfd);
+      delete(client,client->first->sockfd);
+      if(client->first==NULL){
+        exit(13);
+      }
+    }
+  }
+
+    else{
+      printf ("             \n/quit if you want to quit\n");
+    }
+  }
+  exit(12);
+}
+
+void traitant(int a){
+printf("\n              /quit if you want to quit\n ");
+
+}
+
 
 
 int main(int argc, char** argv)
@@ -335,6 +377,11 @@ int main(int argc, char** argv)
     fprintf(stderr, "usage: RE216_SERVER port\n");
     return 1;
   }
+
+  struct sigaction sig;
+  memset(&sig, '0', sizeof(sig));
+  sig.sa_handler = traitant;
+  sigaction(SIGINT, &sig, NULL);
 
   int nb_connexions=5;
   int len_name=20;
@@ -359,6 +406,9 @@ int main(int argc, char** argv)
 
   List *client = initialisation();
   AllSalon *allsalon = initialisation_allsalon();
+
+  pthread_t pthread[2];
+  pthread_create(&pthread[1], NULL, start_read, (void*)client);
 
   do_bind(sockfd, sin);
   do_listen(sockfd, nb_connexions+1);
@@ -430,22 +480,32 @@ int main(int argc, char** argv)
 
           else if(strcmp(current_client->name,"\0")==0 && strncmp(buf,"/nick ", 6)==0){
             char message[100]="";
+              if(strstr(buf+6, " ")==NULL && buf[7]!='\0'){
             strcpy(current_client->name,buf+6);
             current_client->name[strlen(current_client->name)-1]=0;
             strcat(message,"[Server] Bonjour, bienvenue à toi: ");
             strcat(message, buf+6);
             do_write(fds[i].fd, message, len);
           }
+          else{
+            do_write(fds[i].fd, "[Server] Nom Invalide: Espaces interdits dans votre nom\n", len);
+          }
+          }
 
           else if(strncmp(buf,"/nick ", 6)==0){
             int j=6;
             int var=6;
             char message[100]="";
+            if(strstr(buf+6, " ")==NULL && buf[7]!='\0'){
             strcpy(current_client->name,buf+6);
             current_client->name[strlen(current_client->name)-1]=0;
             strcat(message,"[Server] Ton nouveau nom est : ");
             strcat(message, buf+6);
             do_write(fds[i].fd, message, len);
+          }
+          else{
+            do_write(fds[i].fd, "[Server] Nom Invalide: Espaces interdits dans votre nom\n", len);
+          }
           }
 
           else if (strcmp(buf,"/who\n")==0){
@@ -707,23 +767,22 @@ int main(int argc, char** argv)
           else if (strncmp(buf,"/send ",6)==0){
             char message[1000]="";
             char *name=strtok(buf+6, " ");
+            char* recu=strtok(NULL, "\n");
+
             Element* element;
             element=client->first;
             strcat(message,"/send ");
             strcat(message,current_client->name);
             strcat(message, " ");
-            char* recu=strtok(NULL, "\n");
             strcat(message,recu);
             while(element != NULL)
             {
               if(strcmp(element->name,name)==0){
                 do_write(element->sockfd, message,1000);
-                do_write(fds[i].fd, " ",1000);
                 break;
               }
 
               else if(element->next==NULL){
-                do_write(fds[i].fd, " ",1000);
                 do_write(fds[i].fd, "[Server] Ce client n'existe pas\n",1000);
                 break;
               }
@@ -743,6 +802,32 @@ int main(int argc, char** argv)
             while(element != NULL)
             {
               if(strcmp(element->name,name)==0){
+                do_write(element->sockfd, message,1000);
+                break;
+              }
+
+              if(element->next==NULL){
+                do_write(fds[i].fd, "[Server]Le transfert a échoué\n",1000);
+                break;
+              }
+                element = element->next;
+            }
+          }
+          else if (strncmp(buf,"/send3 ",7)==0){
+            char message[1000]="";
+            char *nom_receveur=strtok(buf+7, " ");
+            char* nom_fichier=strtok(NULL, "\n");
+            Element* element;
+            element=client->first;
+            strcat(message,"/send3 ");
+            strcat(message,nom_receveur);
+            strcat(message, " ");
+            strcat(message,current_client->name);
+            strcat(message, " ");
+            strcat(message,nom_fichier);
+            while(element != NULL)
+            {
+              if(strcmp(element->name,nom_receveur)==0){
                 do_write(element->sockfd, message,1000);
                 break;
               }
