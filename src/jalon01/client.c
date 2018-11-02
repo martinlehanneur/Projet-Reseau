@@ -13,8 +13,10 @@
 #include <poll.h>
 #include <pthread.h>
 #include <signal.h>
+int PORT=8890;
 
 pthread_mutex_t verrou = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t verrou2 = PTHREAD_MUTEX_INITIALIZER;
 
 
 void error (const char *msg){
@@ -22,6 +24,29 @@ void error (const char *msg){
   exit(1);
 }
 
+void do_bind(int sockfd,struct sockaddr_in sin){
+  if (bind(sockfd,(struct sockaddr*)&sin,sizeof(sin))<0 ){
+    error("Server : bind");
+    exit (1);
+  }
+}
+
+void do_listen(int sockfd, int nb_connexions){
+  if (listen(sockfd,nb_connexions)<0){
+    error("Server : listn");
+    exit (1);
+  }
+}
+
+int do_accept(int sockfd,struct sockaddr_storage sinclient){
+  socklen_t len;
+  len = sizeof sinclient;
+  int var = accept(sockfd,(struct sockaddr*)&sinclient,&len);
+  if(var<0){
+    error("server: accept");
+  }
+  return var;
+}
 
 int do_socket(int domaine, int type, int protocol){
   int yes=1;
@@ -54,49 +79,47 @@ void do_read(int sockfd, char *buf, int len){
 }
 
 void traitant(int a){
-printf("\n              /quit if you want to quit\n ");
+  printf("\n              /quit if you want to quit\n ");
 
 }
 
-void start_read_send(int sockfd, char buf[]){
+void* start_read_send(void* arg){
   char message[100]="";
   char message2[100]="";
   char message3[100]="";
   char message4[100]="";
   char message5[100]="";
   char message6[100]="";
-  char* nom_envoyeur=strtok(buf+6, " ");
-  char* nom_fichier_envoye=strtok(NULL, "\n");
+  char* buf=(char *)arg;
+  char* adresse=strtok(buf+6, " ");
+  char* nom_envoyeur=strtok(NULL, " ");
+  char* nom_fichier=strtok(NULL, "\n");
   char chemin_fichier[100]="";
   int len=100;
-  char* comparaison="[";
+  struct sockaddr_in sin;
+  sin.sin_family=AF_INET;
+  sin.sin_port=htons(PORT);
+  inet_aton(adresse, &sin.sin_addr);
+  int sockfd = do_socket(AF_INET,SOCK_STREAM,0);
+
+sleep(3);
+  do_connect(sockfd,sin);
+
   printf("Please tap enter to see the message \n");
   strcat(message, nom_envoyeur);
   strcat(message, " vous envoie le fichier ");
-  strcat(message, nom_fichier_envoye);
+  strcat(message, nom_fichier);
   strcat(message, "\nAcceptez vous le fichier [y/n]\n");
-  strcat(message2, "/send3 ");
-  strcat(message2, nom_envoyeur);
-  strcat(message2, " ");
-  strcat(message2, nom_fichier_envoye);
-  strcat(message2, "\n");
-  strcat(message3, "/msg ");
-  strcat(message3, nom_envoyeur);
+  strcat(message2, "Fichier accepté\n");
   strcat(message3, " Fichier transféré\n");
-  strcat(message4, nom_fichier_envoye);
+  strcat(message4, nom_fichier);
   strcat(message4, " sauvegardé dans /Projet-Reseau/");
-  strcat(message4, nom_fichier_envoye);
-  strcat(message5, "/msg ");
-  strcat(message5, nom_envoyeur);
-  strcat(message5, " Fichier refusé\n");
-  strcat(message6, "/msg ");
-  strcat(message6, nom_envoyeur);
-  strcat(message6, " Le transfert a échoué\n");
+  strcat(message4, nom_fichier);
+  strcat(message5, "Fichier refusé\n");
   strcat(chemin_fichier, "../../");
-  strcat(chemin_fichier, nom_fichier_envoye);
+  strcat(chemin_fichier, nom_fichier);
   pthread_mutex_lock(&verrou);
   printf("%s", message);
-  clock_t temps=clock()/CLOCKS_PER_SEC;
   while(1){
     char reponse[100];
     char buf2[1000];
@@ -109,114 +132,96 @@ void start_read_send(int sockfd, char buf[]){
       __sync_synchronize();
       while(1){
         memset(buf2, 0, 1000);
-        printf("coucou4\n");
         __sync_synchronize();
         do_read(sockfd,buf2,1000);
         __sync_synchronize();
-        printf("buf2=%s\n", buf2);
-        if(buf2[0]=='\0'){
+
+        if(strcmp(buf2, "Fichier tranféré\n")==0){
+          printf("              %s\n",buf2);
+          printf("              %s\n",message4);
+          fclose(fichier);
+          close(sockfd);
+          break;
         }
         else{
-        char *commande=strtok(buf2, " ");
-        printf("commande:%s\n",commande);
-        if(strcmp(commande, "/send2")==0 ){
-          char *nom=strtok(NULL, " ");
-          printf("nom:%s\n", nom);
-          char* texte=strtok(NULL, "\0");
-          if(strcmp(nom, nom_envoyeur)==0){
-            fputs(texte, fichier);
-            temps=clock()/CLOCKS_PER_SEC;
-          }
-
-          else {
-            char affichage[100]="";
-            char* texte=strtok(NULL, "\0");
-            strcat(affichage, commande);
-            strcat(affichage, "] ");
-            strcat(affichage, nom);
-            strcat(affichage, " ");
-            strcat(affichage, texte);
-            printf("              %s\n", affichage);
-          }
-        }
-        else if(strncmp(commande, "[", 1)==0){
-          printf("              %s\n", commande);
-          strtok(commande, "]");
-          printf("coucou\n");
-          if(strcmp(commande+1, nom_envoyeur)==0){
-            printf("coucou2\n");
-            fclose(fichier);
-            __sync_synchronize();
-            printf("              %s\n", message4);
-            do_write(sockfd, message3, len);
-            __sync_synchronize();
-            break;
-          }
-          else if (((clock()/CLOCKS_PER_SEC)-temps)>10){
-            printf("coucou3\n");
-            fclose(fichier);
-            printf("              Le transfert a échoué\n");
-            do_write(sockfd, message6, len);
-            break;
-          }
+          fputs(buf2, fichier);
         }
       }
-      }
-
-      break;
-
     }
     else{
       __sync_synchronize();
       do_write(sockfd, message5, len);
-        __sync_synchronize();
+      __sync_synchronize();
       break;
     }
+    break;
+
   }
   pthread_mutex_unlock(&verrou);
 }
 
-void send_folder(int sockfd, char* mon_nom, char* nom_envoyeur, char* nom_fichier){
+void* send_folder(void *arg){
   int len=100;
   char buf[1000];
   char message3[100]="";
+  char message[100]="";
   int taille_max=70;
   char texte[taille_max];
-  FILE* fichier= NULL;
-  fichier=fopen(nom_fichier, "r");
-  if(fichier!=NULL){
-  strcat(message3,"/msg ");
-  strcat(message3, nom_envoyeur);
-  strcat(message3, " Fichier tranféré\n");
-  memset(texte, 0, taille_max);
-  while(fgets(texte, taille_max, fichier)!=NULL){
-    char message4[100]="";
-    memset(message4, 0, 100);
-    strcat(message4,"/send2 ");
-    strcat(message4, nom_envoyeur);
-    strcat(message4, " ");
-    strcat(message4, texte);
-    __sync_synchronize();
-    do_write(sockfd, message4, len);
-    __sync_synchronize();
+
+  struct sockaddr_in sin;
+  struct sockaddr_storage sinclient;
+  socklen_t* addrlen= (socklen_t*)sizeof(sinclient);
+  sin.sin_family=AF_INET;
+  sin.sin_port=htons(PORT);
+  sin.sin_addr.s_addr=htonl (INADDR_ANY);
+  int sockfd = do_socket(AF_INET,SOCK_STREAM,IPPROTO_TCP);
+  do_bind(sockfd, sin);
+  do_listen(sockfd, 2);
+  int connexion=do_accept(sockfd, sinclient);
+while(1){
+  do_read(connexion, message, len);
+  if(strcmp(message,"Fichier refusé\n" )==0){
+    printf("              %s\n", message);
   }
-  fclose(fichier);
-  __sync_synchronize();
-  do_write(sockfd, message3, len);
-  __sync_synchronize();
-}
   else{
-    printf("                  Ce fichier n'existe pas \n");
+    printf("              %s\n", message);
+    char* nom_fichier=(char *)arg;
+    FILE* fichier= NULL;
+    fichier=fopen(nom_fichier, "r");
+    if(fichier!=NULL){
+      strcat(message3, "Fichier tranféré\n");
+      while(fgets(texte, taille_max, fichier)!=NULL){
+        __sync_synchronize();
+        do_write(connexion, texte, len);
+        __sync_synchronize();
+        sleep(0.1);
+          memset(texte, 0, taille_max);
+      }
+      fclose(fichier);
+      __sync_synchronize();
+      do_write(connexion, message3, len);
+      printf("              %s\n", message3);
+      close(connexion);
+      close(sockfd);
+      __sync_synchronize();
+    }
+    else{
+      printf("                  Ce fichier n'existe pas \n");
+    }
+    break;
   }
+}
 }
 
 void* start_read(void *arg){
   while(1){
     char buf[1000];
     char message[100]="";
+    pthread_mutex_lock(&verrou2);
     __sync_synchronize();
     do_read(*(int *)arg,buf,1000);
     __sync_synchronize();
+    pthread_mutex_unlock(&verrou2);
     sleep(0.1);
 
     if(strcmp(buf, "[Server] Vous allez être déconnecté...\n")==0){
@@ -226,13 +231,11 @@ void* start_read(void *arg){
       break;
     }
     else if(strncmp(buf, "/send ",6)==0){
-      start_read_send(*(int *)arg, buf);
+      pthread_t pthread3[2];
+      pthread_create(&pthread3[1], NULL, start_read_send, (void*)&buf);
     }
-    else if(strncmp(buf, "/send3 ", 7)==0){
-      char* mon_nom=strtok(buf+7, " ");
-      char* nom_envoyeur=strtok(NULL, " ");
-      char* nom_fichier=strtok(NULL, " ");
-      send_folder(*(int *)arg, mon_nom, nom_envoyeur, nom_fichier);
+    else if(strcmp(buf, " ")==0){
+
     }
     else{
       printf ("             %s\n",buf);
@@ -241,9 +244,10 @@ void* start_read(void *arg){
   exit(12);
 }
 
-void start_send(int sockfd, char *name, char *nom_fichier){
+int start_send(int sockfd, char *name, char *nom_fichier){
   int len=100;
   char message2[100];
+  char message[100];
   memset(message2, 0, 100);
   strcat(message2, "/send ");
   strcat(message2, name);
@@ -253,6 +257,18 @@ void start_send(int sockfd, char *name, char *nom_fichier){
   __sync_synchronize();
   do_write(sockfd, message2, len);
   __sync_synchronize();
+  pthread_mutex_lock(&verrou2);
+  do_read(sockfd, message, len);
+  __sync_synchronize();
+  pthread_mutex_unlock(&verrou2);
+  if(strcmp(message, "[Server] Ce client n'existe pas\n")==0){
+    printf("              %s", message);
+  }
+  else if(strcmp(message, "[Server] Requête envoyée\n")==0){
+    pthread_t pthread2[2];
+    pthread_create(&pthread2[1], NULL, send_folder, (void*)nom_fichier);
+
+  }
 }
 
 
@@ -274,7 +290,7 @@ int main(int argc,char** argv)
     memset(&sig, '0', sizeof(sig));
     sig.sa_handler = traitant;
     sigaction(SIGINT, &sig, NULL);
-    
+
     struct sockaddr_in sin;
     sin.sin_family=AF_INET;
     sin.sin_port=htons(atoi(argv[2]));
@@ -314,6 +330,9 @@ int main(int argc,char** argv)
         else{
           printf("                  Ce fichier n'existe pas \n");
         }
+      }
+      else if(strcmp(message,"\n")==0){
+
       }
       else{
         __sync_synchronize();

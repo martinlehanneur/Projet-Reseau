@@ -264,9 +264,9 @@ void do_listen(int sockfd, int nb_connexions){
   }
 }
 
-int do_accept(int sockfd,struct sockaddr_storage sinclient){
+int do_accept(int sockfd,struct sockaddr_in sinclient){
   socklen_t len;
-  len = sizeof sinclient;
+  len = sizeof(sinclient);
   int var = accept(sockfd,(struct sockaddr*)&sinclient,&len);
   if(var<0){
     error("server: accept");
@@ -391,7 +391,7 @@ int main(int argc, char** argv)
   char temps[30];
 
   struct sockaddr_in sin;
-  struct sockaddr_storage sinclient;
+  struct sockaddr_in sinclient={0};
   sin.sin_family=AF_INET;
   sin.sin_port=htons(atoi(argv[1]));
   sin.sin_addr.s_addr=htonl (INADDR_ANY);
@@ -419,17 +419,20 @@ int main(int argc, char** argv)
       if(fds[i].revents==POLLIN){
 
         if(fds[i].fd==sockfd){
-          int connexion=do_accept(sockfd, sinclient);
+          socklen_t len;
+          len = sizeof(sinclient);
+          int connexion = accept(sockfd,(struct sockaddr*)&sinclient,&len);
+          //int connexion=do_accept(sockfd, sinclient);
           if (length(client)<nb_connexions){
-            struct sockaddr_in *s;
             struct tm *tm= malloc(sizeof(*tm));
-            s=(struct sockaddr_in *)&sinclient;
-            inet_ntop(AF_INET, &s->sin_addr, adresse, sizeof adresse);
+            char adresse[100];
+            strcpy(adresse,inet_ntoa(sinclient.sin_addr));
+            printf("adresse=%s\n",inet_ntoa(sinclient.sin_addr));
             time_t t = time(NULL);
             tm=localtime(&t);
             strftime(temps, sizeof(temps), "%c", tm);
 
-            insertion(client, adresse, temps, ntohs(s->sin_port), connexion);
+            insertion(client, adresse, temps, ntohs(sinclient.sin_port), connexion);
 
             for(int k=1; k<=nb_connexions; k++){
               if(fds[k].fd==0){
@@ -766,79 +769,38 @@ int main(int argc, char** argv)
           }
           else if (strncmp(buf,"/send ",6)==0){
             char message[1000]="";
-            char *name=strtok(buf+6, " ");
+            char message2[1000]="";
+            char* name=strtok(buf+6, " ");
             char* recu=strtok(NULL, "\n");
-
             Element* element;
             element=client->first;
-            strcat(message,"/send ");
-            strcat(message,current_client->name);
-            strcat(message, " ");
-            strcat(message,recu);
             while(element != NULL)
             {
               if(strcmp(element->name,name)==0){
-                do_write(element->sockfd, message,1000);
+                char* adresse=current_client->adresse;
+                strcat(message, "/send ");
+                strcat(message, adresse);
+                strcat(message, " ");
+                strcat(message, current_client->name);
+                strcat(message, " ");
+                strcat(message, recu);
+                  strcat(message,"\n");
+                  do_write(fds[i].fd, " ",1000);
+                  do_write(fds[i].fd, "[Server] Requête envoyée\n",1000);
+                  do_write(element->sockfd, message,1000);
+
                 break;
               }
 
               else if(element->next==NULL){
+                  do_write(fds[i].fd, " ",1000);
                 do_write(fds[i].fd, "[Server] Ce client n'existe pas\n",1000);
                 break;
               }
               element = element->next;
             }
           }
-          else if (strncmp(buf,"/send2 ",7)==0){
-            char message[1000]="";
-            char *name=strtok(buf+7, " ");
-            Element* element;
-            element=client->first;
-            strcat(message,"/send2 ");
-            strcat(message,current_client->name);
-            strcat(message, " ");
-            char* recu=strtok(NULL, "\0");
-            strcat(message,recu);
-            while(element != NULL)
-            {
-              if(strcmp(element->name,name)==0){
-                do_write(element->sockfd, message,1000);
-                break;
-              }
 
-              if(element->next==NULL){
-                do_write(fds[i].fd, "[Server]Le transfert a échoué\n",1000);
-                break;
-              }
-                element = element->next;
-            }
-          }
-          else if (strncmp(buf,"/send3 ",7)==0){
-            char message[1000]="";
-            char *nom_receveur=strtok(buf+7, " ");
-            char* nom_fichier=strtok(NULL, "\n");
-            Element* element;
-            element=client->first;
-            strcat(message,"/send3 ");
-            strcat(message,nom_receveur);
-            strcat(message, " ");
-            strcat(message,current_client->name);
-            strcat(message, " ");
-            strcat(message,nom_fichier);
-            while(element != NULL)
-            {
-              if(strcmp(element->name,nom_receveur)==0){
-                do_write(element->sockfd, message,1000);
-                break;
-              }
-
-              if(element->next==NULL){
-                do_write(fds[i].fd, "[Server]Le transfert a échoué\n",1000);
-                break;
-              }
-                element = element->next;
-            }
-          }
           else{
             char message[100]="";
             strcat(message, "[Server] No commande found: ");
