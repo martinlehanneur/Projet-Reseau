@@ -24,7 +24,7 @@ void error (const char *msg){
   exit(1);
 }
 
-void do_bind(int sockfd,struct sockaddr_in sin){
+void do_bind(int sockfd,struct sockaddr_in6 sin){
   if (bind(sockfd,(struct sockaddr*)&sin,sizeof(sin))<0 ){
     error("Server : bind");
     exit (1);
@@ -38,7 +38,7 @@ void do_listen(int sockfd, int nb_connexions){
   }
 }
 
-int do_accept(int sockfd,struct sockaddr_storage sinclient){
+int do_accept(int sockfd,struct sockaddr_in6 sinclient){
   socklen_t len;
   len = sizeof sinclient;
   int var = accept(sockfd,(struct sockaddr*)&sinclient,&len);
@@ -57,6 +57,12 @@ int do_socket(int domaine, int type, int protocol){
   return sockfd;
 }
 
+void do_connect6(int sockfd, struct sockaddr_in6 sin){
+  if (connect(sockfd,(struct sockaddr*)&sin,sizeof(sin))<0) {
+    error("Client: connect");
+    exit(1);
+  }
+}
 void do_connect(int sockfd, struct sockaddr_in sin){
   if (connect(sockfd,(struct sockaddr*)&sin,sizeof(sin))<0) {
     error("Client: connect");
@@ -96,14 +102,34 @@ void* start_read_send(void* arg){
   char* nom_fichier=strtok(NULL, "\n");
   char chemin_fichier[100]="";
   int len=100;
-  struct sockaddr_in sin;
-  sin.sin_family=AF_INET;
-  sin.sin_port=htons(PORT);
-  inet_aton(adresse, &sin.sin_addr);
-  int sockfd = do_socket(AF_INET,SOCK_STREAM,0);
+
+  struct addrinfo *res, hints;
+  memset (&hints, 0, sizeof (hints));
+hints.ai_family = PF_UNSPEC;
+hints.ai_socktype = SOCK_STREAM;
+hints.ai_flags |= AI_CANONNAME;
+  getaddrinfo(adresse, NULL, &hints, &res);
+  int sockfd;
+  if(res->ai_family==AF_INET6){
+    struct sockaddr_in6 sin;
+    sin.sin6_port=htons(PORT);
+    sin.sin6_family=AF_INET6;
+    inet_pton(AF_INET6, adresse, &sin.sin6_addr);
+    sockfd = do_socket(res->ai_family,SOCK_STREAM,0);
+    do_connect6(sockfd,sin);
+  }
+  else if(res->ai_family==AF_INET){
+    struct sockaddr_in sin;
+    sin.sin_port=htons(PORT);
+    sin.sin_family=AF_INET;
+    inet_aton(adresse, &sin.sin_addr);
+    sockfd = do_socket(res->ai_family,SOCK_STREAM,0);
+    do_connect(sockfd,sin);
+  }
+
+
 
 sleep(3);
-  do_connect(sockfd,sin);
 
   printf("Please tap enter to see the message \n");
   strcat(message, nom_envoyeur);
@@ -168,13 +194,13 @@ void* send_folder(void *arg){
   int taille_max=70;
   char texte[taille_max];
 
-  struct sockaddr_in sin;
-  struct sockaddr_storage sinclient;
+  struct sockaddr_in6 sin;
+  struct sockaddr_in6 sinclient;
   socklen_t* addrlen= (socklen_t*)sizeof(sinclient);
-  sin.sin_family=AF_INET;
-  sin.sin_port=htons(PORT);
-  sin.sin_addr.s_addr=htonl (INADDR_ANY);
-  int sockfd = do_socket(AF_INET,SOCK_STREAM,IPPROTO_TCP);
+  sin.sin6_family=AF_INET6;
+  sin.sin6_port=htons(PORT);
+  sin.sin6_addr=in6addr_any;
+  int sockfd = do_socket(AF_INET6,SOCK_STREAM,IPPROTO_TCP);
   do_bind(sockfd, sin);
   do_listen(sockfd, 2);
   int connexion=do_accept(sockfd, sinclient);
@@ -290,16 +316,40 @@ int main(int argc,char** argv)
     memset(&sig, '0', sizeof(sig));
     sig.sa_handler = traitant;
     sigaction(SIGINT, &sig, NULL);
+int sockfd;
+    struct addrinfo *res, hints;
+    memset (&hints, 0, sizeof (hints));
+ hints.ai_family = PF_UNSPEC;
+ hints.ai_socktype = SOCK_STREAM;
+hints.ai_flags |= AI_CANONNAME;
+    getaddrinfo(argv[1], NULL, &hints, &res);
+    if(res->ai_family==AF_INET6){
+      struct sockaddr_in6 sin;
+      sin.sin6_port=htons(atoi(argv[2]));
+      sin.sin6_family=AF_INET6;
+      inet_pton(AF_INET6, argv[1], &sin.sin6_addr);
+      sockfd = do_socket(res->ai_family,SOCK_STREAM,0);
+      do_connect6(sockfd,sin);
+    }
+    else if(res->ai_family==AF_INET){
+      struct sockaddr_in sin;
+      sin.sin_port=htons(atoi(argv[2]));
+      sin.sin_family=AF_INET;
+      inet_aton(argv[1], &sin.sin_addr);
+      sockfd = do_socket(res->ai_family,SOCK_STREAM,0);
+      do_connect(sockfd,sin);
+    }
+else{
+  printf("kskks _\n");
+}
 
-    struct sockaddr_in sin;
-    sin.sin_family=AF_INET;
-    sin.sin_port=htons(atoi(argv[2]));
-    inet_aton(argv[1], &sin.sin_addr);
-    int sockfd = do_socket(AF_INET,SOCK_STREAM,0);
+
+
+    //printf("%s\n",sin.sin6_addr);
+
     //get the socket
     int len=100;
     char con_message[100];
-    do_connect(sockfd,sin);
     do_read(sockfd,con_message,len);
     if(strcmp(con_message,"[Server] Le serveur n'accepte plus de connexions\n")==0){
       printf("%s\n", con_message);

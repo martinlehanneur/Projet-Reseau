@@ -250,7 +250,7 @@ int do_socket(int domaine, int type, int protocol){
   return sockfd;
 }
 
-void do_bind(int sockfd,struct sockaddr_in sin){
+void do_bind(int sockfd,struct sockaddr_in6 sin){
   if (bind(sockfd,(struct sockaddr*)&sin,sizeof(sin))<0 ){
     error("Server : bind");
     exit (1);
@@ -390,12 +390,13 @@ int main(int argc, char** argv)
   char adresse[30];
   char temps[30];
 
-  struct sockaddr_in sin;
-  struct sockaddr_in sinclient={0};
-  sin.sin_family=AF_INET;
-  sin.sin_port=htons(atoi(argv[1]));
-  sin.sin_addr.s_addr=htonl (INADDR_ANY);
-  int sockfd = do_socket(AF_INET,SOCK_STREAM,IPPROTO_TCP);
+  struct sockaddr_in6 sin;
+  struct sockaddr_in6 sinclient={0};
+  sin.sin6_family=AF_INET6;
+  sin.sin6_port=htons(atoi(argv[1]));
+  sin.sin6_addr=in6addr_any;
+  int sockfd = do_socket(AF_INET6,SOCK_STREAM,IPPROTO_TCP);
+  
 
   struct pollfd fds[nb_connexions+2];
   fds[0].fd=sockfd;
@@ -425,14 +426,15 @@ int main(int argc, char** argv)
           //int connexion=do_accept(sockfd, sinclient);
           if (length(client)<nb_connexions){
             struct tm *tm= malloc(sizeof(*tm));
-            char adresse[100];
-            strcpy(adresse,inet_ntoa(sinclient.sin_addr));
-            printf("adresse=%s\n",inet_ntoa(sinclient.sin_addr));
+            char adresse[INET6_ADDRSTRLEN];
+            inet_ntop(AF_INET6, &sinclient.sin6_addr, adresse, sizeof(adresse));
+            //strcpy(adresse,inet_ntoa(sinclient.sin6_addr));
+            //printf("adresse=%s\n",inet_ntoa(sinclient.sin6_addr));
             time_t t = time(NULL);
             tm=localtime(&t);
             strftime(temps, sizeof(temps), "%c", tm);
 
-            insertion(client, adresse, temps, ntohs(sinclient.sin_port), connexion);
+            insertion(client, adresse, temps, ntohs(sinclient.sin6_port), connexion);
 
             for(int k=1; k<=nb_connexions; k++){
               if(fds[k].fd==0){
