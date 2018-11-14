@@ -13,8 +13,15 @@
 #include <poll.h>
 #include <pthread.h>
 #include <signal.h>
+#include <arpa/inet.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include<assert.h>
+
+//PORT used for peer-to-peer
 int PORT=8890;
 
+//Mutex initialization
 pthread_mutex_t verrou = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t verrou2 = PTHREAD_MUTEX_INITIALIZER;
 
@@ -38,6 +45,7 @@ void do_listen(int sockfd, int nb_connexions){
   }
 }
 
+//Accept connection
 int do_accept(int sockfd,struct sockaddr_in6 sinclient){
   socklen_t len;
   len = sizeof sinclient;
@@ -48,6 +56,7 @@ int do_accept(int sockfd,struct sockaddr_in6 sinclient){
   return var;
 }
 
+//Socket Creation
 int do_socket(int domaine, int type, int protocol){
   int yes=1;
   int sockfd= socket(domaine, type, protocol);
@@ -57,12 +66,15 @@ int do_socket(int domaine, int type, int protocol){
   return sockfd;
 }
 
+//Connection to server with ipv6 adress
 void do_connect6(int sockfd, struct sockaddr_in6 sin){
   if (connect(sockfd,(struct sockaddr*)&sin,sizeof(sin))<0) {
     error("Client: connect");
     exit(1);
   }
 }
+
+//Connection to server with ipv4 adress
 void do_connect(int sockfd, struct sockaddr_in sin){
   if (connect(sockfd,(struct sockaddr*)&sin,sizeof(sin))<0) {
     error("Client: connect");
@@ -84,11 +96,13 @@ void do_read(int sockfd, char *buf, int len){
   }
 }
 
+//SIGINT signal redirection
 void traitant(int a){
   printf("\n              /quit if you want to quit\n ");
 
 }
 
+//Thread for receive a file
 void* start_read_send(void* arg){
   char message[100]="";
   char message2[100]="";
@@ -99,17 +113,20 @@ void* start_read_send(void* arg){
   char* buf=(char *)arg;
   char* adresse=strtok(buf+6, " ");
   char* nom_envoyeur=strtok(NULL, " ");
-  char* nom_fichier=strtok(NULL, "\n");
+  char* nom_fichier=strtok(NULL, " ");
   char chemin_fichier[100]="";
   int len=100;
 
+  //Find if server adress is an ipv6 or ipv4 adress
   struct addrinfo *res, hints;
   memset (&hints, 0, sizeof (hints));
-hints.ai_family = PF_UNSPEC;
-hints.ai_socktype = SOCK_STREAM;
-hints.ai_flags |= AI_CANONNAME;
+  hints.ai_family = PF_UNSPEC;
+  hints.ai_socktype = SOCK_STREAM;
+  hints.ai_flags |= AI_CANONNAME;
   getaddrinfo(adresse, NULL, &hints, &res);
   int sockfd;
+  sleep(3);
+  //The server is configure as ipv6
   if(res->ai_family==AF_INET6){
     struct sockaddr_in6 sin;
     sin.sin6_port=htons(PORT);
@@ -118,6 +135,7 @@ hints.ai_flags |= AI_CANONNAME;
     sockfd = do_socket(res->ai_family,SOCK_STREAM,0);
     do_connect6(sockfd,sin);
   }
+  //The server is configure as ipv4
   else if(res->ai_family==AF_INET){
     struct sockaddr_in sin;
     sin.sin_port=htons(PORT);
@@ -128,8 +146,8 @@ hints.ai_flags |= AI_CANONNAME;
   }
 
 
+  //Wait the server
 
-sleep(3);
 
   printf("Please tap enter to see the message \n");
   strcat(message, nom_envoyeur);
@@ -144,101 +162,110 @@ sleep(3);
   strcat(message5, "Fichier refusé\n");
   strcat(chemin_fichier, "../../");
   strcat(chemin_fichier, nom_fichier);
+
+  //Take a mutex for fgets
   pthread_mutex_lock(&verrou);
   printf("%s", message);
   while(1){
-    char reponse[100];
-    char buf2[1000];
-    fgets(reponse, len, stdin);
-    if(strncmp(reponse, "y",1)==0 ){
-      FILE* fichier=NULL;
-      fichier=fopen(chemin_fichier,"a");
-      __sync_synchronize();
-      do_write(sockfd, message2, len);
-      __sync_synchronize();
-      while(1){
-        memset(buf2, 0, 1000);
-        __sync_synchronize();
-        do_read(sockfd,buf2,1000);
-        __sync_synchronize();
+    char reponse[len];
 
-        if(strcmp(buf2, "Fichier tranféré\n")==0){
-          printf("              %s\n",buf2);
-          printf("              %s\n",message4);
-          fclose(fichier);
-          close(sockfd);
-          break;
-        }
-        else{
-          fputs(buf2, fichier);
-        }
-      }
+    fgets(reponse, len, stdin);
+    if(strncmp(reponse, "y",1)==0 ){ //The response is yes for the file transfert
+      FILE* fichier;
+      fichier=fopen(chemin_fichier,"w");
+      __sync_synchronize();
+      do_write(sockfd, message2, len); //Write to the server that we accept the file
+      __sync_synchronize();
+      int size;
+      read(sockfd, &size, sizeof(int));
+      char buf2[size];
+      memset(buf2, 0, size);
+      __sync_synchronize();
+      do_read(sockfd,buf2,size); //Read what the server sends
+      __sync_synchronize();
+      fwrite(buf2, 1, sizeof(buf2), fichier);
+      printf("              %s\n",message3);
+      printf("              %s\n",message4);
+      fclose(fichier);
+      close(sockfd);
     }
     else{
       __sync_synchronize();
-      do_write(sockfd, message5, len);
+      do_write(sockfd, message5, len);//Write to the server that we don't accept the file
       __sync_synchronize();
       break;
     }
     break;
 
   }
-  pthread_mutex_unlock(&verrou);
+  pthread_mutex_unlock(&verrou);//Free the mutex
 }
 
+//Thread for sending a file
 void* send_folder(void *arg){
   int len=100;
   char buf[1000];
   char message3[100]="";
   char message[100]="";
   int taille_max=70;
-  char texte[taille_max];
 
+
+  //Server initialization for both ipv4 and ipv6
   struct sockaddr_in6 sin;
   struct sockaddr_in6 sinclient;
   socklen_t* addrlen= (socklen_t*)sizeof(sinclient);
   sin.sin6_family=AF_INET6;
   sin.sin6_port=htons(PORT);
   sin.sin6_addr=in6addr_any;
+
+  //Socket creation
   int sockfd = do_socket(AF_INET6,SOCK_STREAM,IPPROTO_TCP);
   do_bind(sockfd, sin);
   do_listen(sockfd, 2);
   int connexion=do_accept(sockfd, sinclient);
-while(1){
-  do_read(connexion, message, len);
-  if(strcmp(message,"Fichier refusé\n" )==0){
-    printf("              %s\n", message);
-  }
-  else{
-    printf("              %s\n", message);
-    char* nom_fichier=(char *)arg;
-    FILE* fichier= NULL;
-    fichier=fopen(nom_fichier, "r");
-    if(fichier!=NULL){
-      strcat(message3, "Fichier tranféré\n");
-      while(fgets(texte, taille_max, fichier)!=NULL){
-        __sync_synchronize();
-        do_write(connexion, texte, len);
-        __sync_synchronize();
-        sleep(0.1);
-          memset(texte, 0, taille_max);
-      }
-      fclose(fichier);
-      __sync_synchronize();
-      do_write(connexion, message3, len);
-      printf("              %s\n", message3);
-      close(connexion);
-      close(sockfd);
-      __sync_synchronize();
+  while(1){
+    do_read(connexion, message, len); //Read the response of the client for the file transfert
+    if(strcmp(message,"Fichier refusé\n" )==0){
+      printf("              %s\n", message);
     }
     else{
-      printf("                  Ce fichier n'existe pas \n");
+      printf("              %s\n", message);
+      char* nom_fichier=(char *)arg;
+      FILE* fichier;;
+      fichier=fopen(nom_fichier, "r");
+      if(fichier!=NULL){
+        strcat(message3, "Fichier tranféré\n");
+        int size;
+        fseek(fichier, 0, SEEK_END);
+        size = ftell(fichier);
+        fseek(fichier, 0, SEEK_SET);
+        write(connexion, &size, sizeof(size));
+        char texte[size];
+        while(!feof(fichier)){//Read the file to send
+          fread(texte, 1, sizeof(texte), fichier);
+          __sync_synchronize();
+          do_write(connexion, texte, sizeof(texte));//Send the file
+          __sync_synchronize();
+          bzero(texte, sizeof(texte));
+          sleep(0.1);
+        }
+        __sync_synchronize();
+        printf("              %s\n", message3);
+        close(connexion);
+        close(sockfd);
+        fclose(fichier);
+        __sync_synchronize();
+      }
+      else{
+        printf("                  Ce fichier n'existe pas \n");
+      }
+      break;
     }
     break;
   }
 }
-}
 
+//Thread read all what is send on the socket
 void* start_read(void *arg){
   while(1){
     char buf[1000];
@@ -258,7 +285,7 @@ void* start_read(void *arg){
     }
     else if(strncmp(buf, "/send ",6)==0){
       pthread_t pthread3[2];
-      pthread_create(&pthread3[1], NULL, start_read_send, (void*)&buf);
+      pthread_create(&pthread3[1], NULL, start_read_send, (void*)&buf); //Create a thread to read a the file which is going to be send
     }
     else if(strcmp(buf, " ")==0){
 
@@ -270,6 +297,8 @@ void* start_read(void *arg){
   exit(12);
 }
 
+
+//send a request to the server in order to know the adress of the client we are looking for
 int start_send(int sockfd, char *name, char *nom_fichier){
   int len=100;
   char message2[100];
@@ -316,12 +345,12 @@ int main(int argc,char** argv)
     memset(&sig, '0', sizeof(sig));
     sig.sa_handler = traitant;
     sigaction(SIGINT, &sig, NULL);
-int sockfd;
+    int sockfd;
     struct addrinfo *res, hints;
     memset (&hints, 0, sizeof (hints));
- hints.ai_family = PF_UNSPEC;
- hints.ai_socktype = SOCK_STREAM;
-hints.ai_flags |= AI_CANONNAME;
+    hints.ai_family = PF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags |= AI_CANONNAME;
     getaddrinfo(argv[1], NULL, &hints, &res);
     if(res->ai_family==AF_INET6){
       struct sockaddr_in6 sin;
@@ -339,13 +368,7 @@ hints.ai_flags |= AI_CANONNAME;
       sockfd = do_socket(res->ai_family,SOCK_STREAM,0);
       do_connect(sockfd,sin);
     }
-else{
-  printf("kskks _\n");
-}
 
-
-
-    //printf("%s\n",sin.sin6_addr);
 
     //get the socket
     int len=100;
@@ -374,6 +397,7 @@ else{
         FILE *fichier=NULL;
         fichier= fopen(nom_fichier,"r");
         if(fichier!=NULL){
+          //Call the function for send the file
           start_send(sockfd, name, nom_fichier);
           fclose(fichier);
         }

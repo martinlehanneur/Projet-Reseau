@@ -14,6 +14,7 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <time.h>
+#include <pthread.h>
 
 typedef struct Element Element;
 struct Element
@@ -338,8 +339,8 @@ void* start_read(void *arg){
 
 
 
-    Element* element;
-    List *client=(List *)arg;
+      Element* element;
+      List *client=(List *)arg;
       element=client->first;
       char message[1000]="";
       if(element==NULL){
@@ -347,14 +348,14 @@ void* start_read(void *arg){
       }
       while(client->first != NULL)
       {
-      do_write(client->first->sockfd,"[Server] Vous allez être déconnecté...\n",100);
-      close(client->first->sockfd);
-      delete(client,client->first->sockfd);
-      if(client->first==NULL){
-        exit(13);
+        do_write(client->first->sockfd,"[Server] Vous allez être déconnecté...\n",100);
+        close(client->first->sockfd);
+        delete(client,client->first->sockfd);
+        if(client->first==NULL){
+          exit(13);
+        }
       }
     }
-  }
 
     else{
       printf ("             \n/quit if you want to quit\n");
@@ -364,7 +365,7 @@ void* start_read(void *arg){
 }
 
 void traitant(int a){
-printf("\n              /quit if you want to quit\n ");
+  printf("\n              /quit if you want to quit\n ");
 
 }
 
@@ -396,7 +397,7 @@ int main(int argc, char** argv)
   sin.sin6_port=htons(atoi(argv[1]));
   sin.sin6_addr=in6addr_any;
   int sockfd = do_socket(AF_INET6,SOCK_STREAM,IPPROTO_TCP);
-  
+
 
   struct pollfd fds[nb_connexions+2];
   fds[0].fd=sockfd;
@@ -485,16 +486,16 @@ int main(int argc, char** argv)
 
           else if(strcmp(current_client->name,"\0")==0 && strncmp(buf,"/nick ", 6)==0){
             char message[100]="";
-              if(strstr(buf+6, " ")==NULL && buf[7]!='\0'){
-            strcpy(current_client->name,buf+6);
-            current_client->name[strlen(current_client->name)-1]=0;
-            strcat(message,"[Server] Bonjour, bienvenue à toi: ");
-            strcat(message, buf+6);
-            do_write(fds[i].fd, message, len);
-          }
-          else{
-            do_write(fds[i].fd, "[Server] Nom Invalide: Espaces interdits dans votre nom\n", len);
-          }
+            if(strstr(buf+6, " ")==NULL && buf[7]!='\0'){
+              strcpy(current_client->name,buf+6);
+              current_client->name[strlen(current_client->name)-1]=0;
+              strcat(message,"[Server] Bonjour, bienvenue à toi: ");
+              strcat(message, buf+6);
+              do_write(fds[i].fd, message, len);
+            }
+            else{
+              do_write(fds[i].fd, "[Server] Nom Invalide: Espaces interdits dans votre nom\n", len);
+            }
           }
 
           else if(strncmp(buf,"/nick ", 6)==0){
@@ -502,15 +503,15 @@ int main(int argc, char** argv)
             int var=6;
             char message[100]="";
             if(strstr(buf+6, " ")==NULL && buf[7]!='\0'){
-            strcpy(current_client->name,buf+6);
-            current_client->name[strlen(current_client->name)-1]=0;
-            strcat(message,"[Server] Ton nouveau nom est : ");
-            strcat(message, buf+6);
-            do_write(fds[i].fd, message, len);
-          }
-          else{
-            do_write(fds[i].fd, "[Server] Nom Invalide: Espaces interdits dans votre nom\n", len);
-          }
+              strcpy(current_client->name,buf+6);
+              current_client->name[strlen(current_client->name)-1]=0;
+              strcat(message,"[Server] Ton nouveau nom est : ");
+              strcat(message, buf+6);
+              do_write(fds[i].fd, message, len);
+            }
+            else{
+              do_write(fds[i].fd, "[Server] Nom Invalide: Espaces interdits dans votre nom\n", len);
+            }
           }
 
           else if (strcmp(buf,"/who\n")==0){
@@ -786,16 +787,17 @@ int main(int argc, char** argv)
                 strcat(message, current_client->name);
                 strcat(message, " ");
                 strcat(message, recu);
-                  strcat(message,"\n");
-                  do_write(fds[i].fd, " ",1000);
-                  do_write(fds[i].fd, "[Server] Requête envoyée\n",1000);
-                  do_write(element->sockfd, message,1000);
+                strcat(message,"\n");
+                do_write(fds[i].fd, " ",1000);
+                  __sync_synchronize();
+                do_write(fds[i].fd, "[Server] Requête envoyée\n",1000);
+                do_write(element->sockfd, message,1000);
 
                 break;
               }
 
               else if(element->next==NULL){
-                  do_write(fds[i].fd, " ",1000);
+                do_write(fds[i].fd, " ",1000);
                 do_write(fds[i].fd, "[Server] Ce client n'existe pas\n",1000);
                 break;
               }

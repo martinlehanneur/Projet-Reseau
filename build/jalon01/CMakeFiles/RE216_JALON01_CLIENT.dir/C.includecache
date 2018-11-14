@@ -37,4 +37,12 @@ pthread.h
 -
 signal.h
 -
+arpa/inet.h
+-
+sys/stat.h
+-
+fcntl.h
+-
+assert.h
+-
 
